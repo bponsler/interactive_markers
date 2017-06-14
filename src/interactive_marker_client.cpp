@@ -35,6 +35,8 @@
 #include <boost/bind.hpp>
 #include <boost/make_shared.hpp>
 
+#include <rclcpp/exceptions.hpp>
+
 //#define DBG_MSG( ... ) ROS_DEBUG_NAMED( "interactive_markers", __VA_ARGS__ );
 #define DBG_MSG( ... ) ROS_DEBUG( __VA_ARGS__ );
 //#define DBG_MSG( ... ) printf("   "); printf( __VA_ARGS__ ); printf("\n");
@@ -43,7 +45,7 @@ namespace interactive_markers
 {
 
 InteractiveMarkerClient::InteractiveMarkerClient(
-    tf::Transformer& tf,
+    tf2::BufferCore& tf,
     const std::string& target_frame,
     const std::string &topic_ns )
 : state_("InteractiveMarkerClient",IDLE)
@@ -121,8 +123,8 @@ void InteractiveMarkerClient::shutdown()
   case INIT:
   case RUNNING:
     publisher_contexts_.clear();
-    init_sub_.shutdown();
-    update_sub_.shutdown();
+    init_sub_.reset();
+    update_sub_.reset();
     last_num_publishers_=0;
     state_=IDLE;
     break;
@@ -135,10 +137,13 @@ void InteractiveMarkerClient::subscribeUpdate()
   {
     try
     {
-      update_sub_ = nh_.subscribe( topic_ns_+"/update", 100, &InteractiveMarkerClient::processUpdate, this );
+      update_sub_ = nh_->create_subscription<visualization_msgs::msg::InteractiveMarkerUpdate>(
+          topic_ns_+"/update",
+	  100,
+	  std::bind(&InteractiveMarkerClient::processUpdate, this, std::placeholders::_1) );
       DBG_MSG( "Subscribed to update topic: %s", (topic_ns_+"/update").c_str() );
     }
-    catch( ros::Exception& e )
+    catch( rclcpp::exceptions::RCLError& e )
     {
       callbacks_.statusCb( ERROR, "General", "Error subscribing: " + std::string(e.what()) );
       return;
@@ -153,11 +158,14 @@ void InteractiveMarkerClient::subscribeInit()
   {
     try
     {
-      init_sub_ = nh_.subscribe( topic_ns_+"/update_full", 100, &InteractiveMarkerClient::processInit, this );
+      init_sub_ = nh_->create_subscription<visualization_msgs::msg::InteractiveMarkerInit>(
+          topic_ns_+"/update_full",
+	  100,
+	  std::bind(&InteractiveMarkerClient::processInit, this, std::placeholders::_1) );
       DBG_MSG( "Subscribed to init topic: %s", (topic_ns_+"/update_full").c_str() );
       state_ = INIT;
     }
-    catch( ros::Exception& e )
+    catch( rclcpp::exceptions::RCLError& e )
     {
       callbacks_.statusCb( ERROR, "General", "Error subscribing: " + std::string(e.what()) );
     }
@@ -196,12 +204,12 @@ void InteractiveMarkerClient::process( const MsgConstPtrT& msg )
   context_it->second->process( msg, enable_autocomplete_transparency_ );
 }
 
-void InteractiveMarkerClient::processInit( const InitConstPtr& msg )
+void InteractiveMarkerClient::processInit( const InitConstPtr msg )
 {
   process<InitConstPtr>(msg);
 }
 
-void InteractiveMarkerClient::processUpdate( const UpdateConstPtr& msg )
+void InteractiveMarkerClient::processUpdate( const UpdateConstPtr msg )
 {
   process<UpdateConstPtr>(msg);
 }
@@ -216,6 +224,7 @@ void InteractiveMarkerClient::update()
   case INIT:
   case RUNNING:
   {
+#if 0  // TODO: ROS 2 subs do not support getNumPublishers (yet?)
     // check if one publisher has gone offline
     if ( update_sub_.getNumPublishers() < last_num_publishers_ )
     {
@@ -226,6 +235,7 @@ void InteractiveMarkerClient::update()
       return;
     }
     last_num_publishers_ = update_sub_.getNumPublishers();
+#endif
 
     // check if all single clients are finished with the init channels
     bool initialized = true;
@@ -248,7 +258,7 @@ void InteractiveMarkerClient::update()
     }
     if ( state_ == INIT && initialized )
     {
-      init_sub_.shutdown();
+      init_sub_.reset();
       state_ = RUNNING;
     }
     if ( state_ == RUNNING && !initialized )

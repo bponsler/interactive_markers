@@ -35,16 +35,16 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/function.hpp>
 #include <boost/unordered_map.hpp>
+#include <boost/noncopyable.hpp>
 
 #include <string>
 
-#include <ros/subscriber.h>
-#include <ros/node_handle.h>
+#include <rclcpp/rclcpp.hpp>
 
-#include <tf/tf.h>
+#include <tf2/buffer_core.h>
 
-#include <visualization_msgs/InteractiveMarkerInit.h>
-#include <visualization_msgs/InteractiveMarkerUpdate.h>
+#include <visualization_msgs/msg/interactive_marker_init.hpp>
+#include <visualization_msgs/msg/interactive_marker_update.hpp>
 
 #include "detail/state_machine.h"
 
@@ -73,20 +73,20 @@ public:
     ERROR = 2
   };
 
-  typedef visualization_msgs::InteractiveMarkerUpdateConstPtr UpdateConstPtr;
-  typedef visualization_msgs::InteractiveMarkerInitConstPtr InitConstPtr;
+  typedef visualization_msgs::msg::InteractiveMarkerUpdate::SharedPtr UpdateConstPtr;
+  typedef visualization_msgs::msg::InteractiveMarkerInit::SharedPtr InitConstPtr;
 
-  typedef boost::function< void ( const UpdateConstPtr& ) > UpdateCallback;
-  typedef boost::function< void ( const InitConstPtr& ) > InitCallback;
+  typedef boost::function< void ( const UpdateConstPtr ) > UpdateCallback;
+  typedef boost::function< void ( const InitConstPtr ) > InitCallback;
   typedef boost::function< void ( const std::string& ) > ResetCallback;
   typedef boost::function< void ( StatusT, const std::string&, const std::string& ) > StatusCallback;
 
   /// @param tf           The tf transformer to use.
   /// @param target_frame tf frame to transform timestamped messages into.
   /// @param topic_ns     The topic namespace (will subscribe to topic_ns/update, topic_ns/init)
-  InteractiveMarkerClient( tf::Transformer& tf,
-      const std::string& target_frame = "",
-      const std::string &topic_ns = "" );
+  InteractiveMarkerClient(tf2::BufferCore& tf,
+			  const std::string& target_frame = "",
+			  const std::string &topic_ns = "" );
 
   /// Will cause a 'reset' call for all server ids
   ~InteractiveMarkerClient();
@@ -123,7 +123,7 @@ private:
   template<class MsgConstPtrT>
   void process( const MsgConstPtrT& msg );
 
-  ros::NodeHandle nh_;
+  rclcpp::node::Node::SharedPtr nh_;
 
   enum StateT
   {
@@ -136,8 +136,8 @@ private:
 
   std::string topic_ns_;
 
-  ros::Subscriber update_sub_;
-  ros::Subscriber init_sub_;
+  rclcpp::subscription::Subscription<visualization_msgs::msg::InteractiveMarkerUpdate>::SharedPtr update_sub_;
+  rclcpp::subscription::Subscription<visualization_msgs::msg::InteractiveMarkerInit>::SharedPtr init_sub_;
 
   // subscribe to the init channel
   void subscribeInit();
@@ -151,7 +151,7 @@ private:
   typedef boost::unordered_map<std::string, SingleClientPtr> M_SingleClient;
   M_SingleClient publisher_contexts_;
 
-  tf::Transformer& tf_;
+  tf2::BufferCore& tf_;
   std::string target_frame_;
 
 public:
@@ -188,10 +188,10 @@ public:
   };
 
   // handle init message
-  void processInit( const InitConstPtr& msg );
+  void processInit( const InitConstPtr msg );
 
   // handle update message
-  void processUpdate( const UpdateConstPtr& msg );
+  void processUpdate( const UpdateConstPtr msg );
 
 private:
   CbCollection callbacks_;

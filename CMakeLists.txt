@@ -1,45 +1,60 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(interactive_markers)
-find_package(catkin REQUIRED 
-  rosconsole
-  roscpp
-  rospy
-  rostest
-  std_msgs
-  tf
-  visualization_msgs
-)
-catkin_package(
-  INCLUDE_DIRS include
-  LIBRARIES interactive_markers
-  CATKIN_DEPENDS roscpp rosconsole rospy tf visualization_msgs
-)
-catkin_python_setup()
 
-include_directories(include ${catkin_INCLUDE_DIRS})
+# Add support for C++11
+if(NOT WIN32)
+  add_definitions(-std=c++11)
+endif()
 
-add_library(${PROJECT_NAME} 
-src/interactive_marker_server.cpp
-src/tools.cpp
-src/menu_handler.cpp
-src/interactive_marker_client.cpp
-src/single_client.cpp
-src/message_context.cpp
-)
+find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rclpy REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(ros2_console REQUIRED)
+find_package(ros2_time REQUIRED)
 
-target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES})
+ament_python_install_package(${PROJECT_NAME})
+
+set(INCLUDE_DIRS include ${ament_cmake_INCLUDE_DIRS}
+  ${rclcpp_INCLUDE_DIRS} ${std_msgs_INCLUDE_DIRS}
+  ${tf2_INCLUDE_DIRS} ${visualization_msgs_INCLUDE_DIRS}
+  ${ros2_console_INCLUDE_DIRS} ${ros2_time_INCLUDE_DIRS})
+include_directories(${INCLUDE_DIRS})
+
+set(LIBRARY_DIRS ${ament_cmake_LIBRARY_DIRS}
+  ${rclcpp_LIBRARY_DIRS} ${std_msgs_LIBRARY_DIRS}
+  ${tf2_LIBRARY_DIRS} ${visualization_msgs_LIBRARY_DIRS}
+  ${ros2_console_LIBRARY_DIRS} ${ros2_time_LIBRARY_DIRS})
+
+link_directories(${LIBRARY_DIRS})
+
+set(LIBS ${ament_cmake_LIBRARIES}
+  ${rclcpp_LIBRARIES} ${std_msgs_LIBRARIES}
+  ${tf2_LIBRARIES} ${visualization_msgs_LIBRARIES}
+  ${ros2_console_LIBRARIES} ${ros2_time_LIBRARIES})
+
+add_library(${PROJECT_NAME} src/interactive_marker_server.cpp src/tools.cpp
+  src/menu_handler.cpp src/interactive_marker_client.cpp src/single_client.cpp
+  src/message_context.cpp)
+
+target_link_libraries(${PROJECT_NAME} ${LIBS})
 
 install(TARGETS ${PROJECT_NAME}
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION})
+  ARCHIVE
+  DESTINATION lib
+  LIBRARY
+  DESTINATION lib)
 install(DIRECTORY include/interactive_markers/
-  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-  FILES_MATCHING PATTERN "*.h")
+  DESTINATION include/${PROJECT_NAME}
+  FILES_MATCHING
+  PATTERN "*.h")
 
 # C++ Unit Tests
 #
 if(GTEST_FOUND)
-  include_directories(${GTEST_INCLUDE_DIRS})
 
   add_executable(server_test EXCLUDE_FROM_ALL src/test/server_test.cpp)
   target_link_libraries(server_test ${PROJECT_NAME} ${GTEST_LIBRARIES})
@@ -51,7 +66,8 @@ if(GTEST_FOUND)
   add_dependencies(tests client_test)
   add_rostest(test/cpp_client.test)
 
-  add_executable(server_client_test EXCLUDE_FROM_ALL src/test/server_client_test.cpp)
+  add_executable(server_client_test
+    EXCLUDE_FROM_ALL src/test/server_client_test.cpp)
   target_link_libraries(server_client_test ${PROJECT_NAME} ${GTEST_LIBRARIES})
   add_dependencies(tests server_client_test)
   add_rostest(test/cpp_server_client.test)
@@ -66,3 +82,17 @@ if(GTEST_FOUND)
   target_link_libraries(missing_tf ${PROJECT_NAME})
   add_dependencies(tests missing_tf)
 endif()
+
+ament_export_dependencies(ament_cmake)
+ament_export_dependencies(ament_cmake_python)
+ament_export_dependencies(rclcpp)
+ament_export_dependencies(rclpy)
+ament_export_dependencies(std_msgs)
+ament_export_dependencies(tf2)
+ament_export_dependencies(visualization_msgs)
+ament_export_dependencies(ros2_console)
+ament_export_dependencies(ros2_time)
+ament_export_include_directories(${INCLUDE_DIRS})
+ament_export_libraries(${PROJECT_NAME} ${LIBS})
+
+ament_package()

@@ -32,7 +32,8 @@
 #ifndef INTERACTIVE_MARKER_MENU_HANDLER
 #define INTERACTIVE_MARKER_MENU_HANDLER
 
-#include <visualization_msgs/MenuEntry.h>
+#include <visualization_msgs/msg/interactive_marker_feedback.hpp>
+#include <visualization_msgs/msg/menu_entry.hpp>
 #include <interactive_markers/interactive_marker_server.h>
 
 #include <boost/function.hpp>
@@ -49,8 +50,8 @@ public:
 
   typedef uint32_t EntryHandle;
 
-  typedef visualization_msgs::InteractiveMarkerFeedbackConstPtr FeedbackConstPtr;
-  typedef boost::function< void ( const FeedbackConstPtr& ) > FeedbackCallback;
+  typedef visualization_msgs::msg::InteractiveMarkerFeedback::SharedPtr FeedbackConstPtr;
+  typedef boost::function< void ( const FeedbackConstPtr ) > FeedbackCallback;
 
   enum CheckState {
     NO_CHECKBOX,
@@ -65,7 +66,7 @@ public:
 
   /// Insert top-level entry with custom (client-side) command
   EntryHandle insert( const std::string &title,
-                      const uint8_t command_type = visualization_msgs::MenuEntry::FEEDBACK,
+                      const uint8_t command_type = visualization_msgs::msg::MenuEntry::FEEDBACK,
                       const std::string &command="" );
 
   /// Insert second-level entry with feedback function
@@ -74,7 +75,7 @@ public:
 
   /// Insert second-level entry with custom (client-side) command
   EntryHandle insert( EntryHandle parent, const std::string &title,
-                      const uint8_t command_type = visualization_msgs::MenuEntry::FEEDBACK,
+                      const uint8_t command_type = visualization_msgs::msg::MenuEntry::FEEDBACK,
                       const std::string &command="" );
 
   /// Specify if an entry should be visible or hidden
@@ -112,16 +113,16 @@ private:
   };
 
   // Call registered callback functions for given feedback command
-  void processFeedback( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback );
+  void processFeedback( const visualization_msgs::msg::InteractiveMarkerFeedback::SharedPtr feedback );
 
   // Create and push MenuEntry objects from handles_in onto
   // entries_out.  Calls itself recursively to add the entire menu
   // tree.
   bool pushMenuEntries( std::vector<EntryHandle>& handles_in,
-                        std::vector<visualization_msgs::MenuEntry>& entries_out,
+                        std::vector<visualization_msgs::msg::MenuEntry>& entries_out,
                         EntryHandle parent_handle );
 
-  visualization_msgs::MenuEntry makeEntry( EntryContext& context, EntryHandle handle, EntryHandle parent_handle );
+  visualization_msgs::msg::MenuEntry makeEntry( EntryContext& context, EntryHandle handle, EntryHandle parent_handle );
 
   // Insert without adding a top-level entry
   EntryHandle doInsert( const std::string &title,

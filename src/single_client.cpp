@@ -34,6 +34,10 @@
 #include <boost/bind.hpp>
 #include <boost/make_shared.hpp>
 
+#include <ros2_console/console.hpp>
+
+#include <ros2_time/time.hpp>
+
 #define DBG_MSG( ... ) ROS_DEBUG( __VA_ARGS__ );
 //#define DBG_MSG( ... ) printf("   "); printf( __VA_ARGS__ ); printf("\n");
 
@@ -42,7 +46,7 @@ namespace interactive_markers
 
 SingleClient::SingleClient(
     const std::string& server_id,
-    tf::Transformer& tf,
+    tf2::BufferCore& tf,
     const std::string& target_frame,
     const InteractiveMarkerClient::CbCollection& callbacks
 )
@@ -63,7 +67,7 @@ SingleClient::~SingleClient()
   callbacks_.resetCb( server_id_ );
 }
 
-void SingleClient::process(const visualization_msgs::InteractiveMarkerInit::ConstPtr& msg, bool enable_autocomplete_transparency)
+void SingleClient::process(const visualization_msgs::msg::InteractiveMarkerInit::SharedPtr msg, bool enable_autocomplete_transparency)
 {
   DBG_MSG( "%s: received init #%lu", server_id_.c_str(), msg->seq_num );
 
@@ -85,14 +89,14 @@ void SingleClient::process(const visualization_msgs::InteractiveMarkerInit::Cons
   }
 }
 
-void SingleClient::process(const visualization_msgs::InteractiveMarkerUpdate::ConstPtr& msg, bool enable_autocomplete_transparency)
+void SingleClient::process(const visualization_msgs::msg::InteractiveMarkerUpdate::SharedPtr msg, bool enable_autocomplete_transparency)
 {
   if ( first_update_seq_num_ == (uint64_t)-1 )
   {
     first_update_seq_num_ = msg->seq_num;
   }
 
-  last_update_time_ = ros::Time::now();
+  last_update_time_ = ros2_time::Time::now();
 
   if ( msg->type == msg->KEEP_ALIVE )
   {
@@ -172,7 +176,7 @@ void SingleClient::update()
 
 void SingleClient::checkKeepAlive()
 {
-  double time_since_upd = (ros::Time::now() - last_update_time_).toSec();
+  double time_since_upd = (ros2_time::Time::now() - last_update_time_).toSec();
   if ( time_since_upd > 2.0 )
   {
     std::ostringstream s;

@@ -32,6 +32,14 @@
 #include "interactive_markers/detail/message_context.h"
 #include "interactive_markers/tools.h"
 
+#include <sstream>
+
+#include <ros2_console/console.hpp>
+
+#include <ros2_time/time.hpp>
+
+#include <geometry_msgs/msg/transform_stamped.hpp>
+
 #include <boost/make_shared.hpp>
 
 #define DBG_MSG( ... ) ROS_DEBUG( __VA_ARGS__ );
@@ -42,16 +50,16 @@ namespace interactive_markers
 
 template<class MsgT>
 MessageContext<MsgT>::MessageContext(
-    tf::Transformer& tf,
+    tf2::BufferCore& tf,
     const std::string& target_frame,
-    const typename MsgT::ConstPtr& _msg,
+    const typename MsgT::SharedPtr _msg,
     bool enable_autocomplete_transparency)
 : tf_(tf)
 , target_frame_(target_frame)
 , enable_autocomplete_transparency_(enable_autocomplete_transparency)
 {
   // copy message, as we will be modifying it
-  msg = boost::make_shared<MsgT>( *_msg );
+  msg = std::make_shared<MsgT>( *_msg );
 
   init();
 }
@@ -67,45 +75,86 @@ MessageContext<MsgT>& MessageContext<MsgT>::operator=( const MessageContext<MsgT
 }
 
 template<class MsgT>
-bool MessageContext<MsgT>::getTransform( std_msgs::Header& header, geometry_msgs::Pose& pose_msg )
+bool MessageContext<MsgT>::getTransform( std_msgs::msg::Header& header, geometry_msgs::msg::Pose& pose_msg )
 {
   try
   {
     if ( header.frame_id != target_frame_ )
     {
       // get transform
-      tf::StampedTransform transform;
-      tf_.lookupTransform( target_frame_, header.frame_id, header.stamp, transform );
-      DBG_MSG( "Transform %s -> %s at time %f is ready.", header.frame_id.c_str(), target_frame_.c_str(), header.stamp.toSec() );
+      geometry_msgs::msg::TransformStamped transform;
+      ros2_time::Time timestamp;
+      timestamp.fromStamp(header.stamp);
+
+      std::chrono::system_clock::time_point timepoint;
+      transform = tf_.lookupTransform( target_frame_, header.frame_id, timepoint);
+      //DBG_MSG( "Transform %s -> %s at time %f is ready.", header.frame_id.c_str(), target_frame_.c_str(), header.stamp.toSec() );
 
       // if timestamp is given, transform message into target frame
-      if ( header.stamp != ros::Time(0) )
+      if ( timestamp.toSec() != 0 && timestamp.toNSec() != 0 )
       {
-        tf::Pose pose;
-        tf::poseMsgToTF( pose_msg, pose );
-        pose = transform * pose;
-        // store transformed pose in original message
-        tf::poseTFToMsg( pose, pose_msg );
+	// Implementation of poseMsgToTf
+        tf2::Transform pose = tf2::Transform(tf2::Quaternion(pose_msg.orientation.x,
+							     pose_msg.orientation.y,
+							     pose_msg.orientation.z,
+							     pose_msg.orientation.w),
+					     tf2::Vector3(pose_msg.position.x,
+							  pose_msg.position.y,
+							  pose_msg.position.z));
+
+	// Transform from StampedTransfrom to tf2::Transform
+	tf2::Transform tf2_transform(tf2::Quaternion(transform.transform.rotation.w,
+						     transform.transform.rotation.x,
+						     transform.transform.rotation.y,
+						     transform.transform.rotation.z),
+				     tf2::Vector3(transform.transform.translation.x,
+						  transform.transform.translation.y,
+						  transform.transform.translation.z));
+	pose = tf2_transform * pose;
+
+        //// Implementation of poseTfToMsg
+	pose_msg.position.x = pose.getOrigin().x();  // Implementation of pointTfToMsg
+	pose_msg.position.y = pose.getOrigin().y();
+	pose_msg.position.z = pose.getOrigin().z();
+
+	// Implementation for quaternionTFToMsg
+	tf2::Quaternion quat = pose.getRotation();
+	static const double QUATERNION_TOLERANCE = 0.1f;
+	if (fabs(quat.length2() - 1 ) > QUATERNION_TOLERANCE) {
+	  ROS_WARN("TF to MSG: Quaternion Not Properly Normalized");
+	  quat.normalize();
+	}
+	pose_msg.orientation.x = quat.x();
+	pose_msg.orientation.y = quat.y();
+	pose_msg.orientation.z = quat.z();
+	pose_msg.orientation.w = quat.w();
+	
         ROS_DEBUG_STREAM("Changing " << header.frame_id << " to "<< target_frame_);
         header.frame_id = target_frame_;
       }
     }
   }
-  catch ( tf::ExtrapolationException& e )
+  catch ( tf2::ExtrapolationException& e )
   {
-    ros::Time latest_time;
     std::string error_string;
 
-    tf_.getLatestCommonTime( target_frame_, header.frame_id, latest_time, &error_string );
+    std::chrono::system_clock::time_point timepoint;
+    tf2::CompactFrameID target_frame_id = tf_._lookupOrInsertFrameNumber(target_frame_);
+    tf2::CompactFrameID frame_id = tf_._lookupOrInsertFrameNumber(header.frame_id);
+    tf_._getLatestCommonTime( target_frame_id, frame_id, timepoint, &error_string );
 
     // if we have some tf info and it is newer than the requested time,
     // we are very unlikely to ever receive the old tf info in the future.
-    if ( latest_time != ros::Time(0) && latest_time > header.stamp )
+    ros2_time::Time stampTime;
+    stampTime.fromStamp(header.stamp);
+    
+    if ( timepoint.time_since_epoch().count() != 0 &&
+	 timepoint.time_since_epoch().count() > stampTime.toNSec() )
     {
-      std::ostringstream s;
+      std::stringstream s;
       s << "The init message contains an old timestamp and cannot be transformed ";
       s << "('" << header.frame_id << "' to '" << target_frame_
-        << "' at time " << header.stamp << ").";
+        << "' at time " << header.stamp.sec << "." << header.stamp.nanosec << ").";
       throw InitFailException( s.str() );
     }
     return false;
@@ -115,22 +164,22 @@ bool MessageContext<MsgT>::getTransform( std_msgs::Header& header, geometry_msgs
 }
 
 template<class MsgT>
-void MessageContext<MsgT>::getTfTransforms( std::vector<visualization_msgs::InteractiveMarker>& msg_vec, std::list<size_t>& indices )
+void MessageContext<MsgT>::getTfTransforms( std::vector<visualization_msgs::msg::InteractiveMarker>& msg_vec, std::list<size_t>& indices )
 {
   std::list<size_t>::iterator idx_it;
   for ( idx_it = indices.begin(); idx_it != indices.end(); )
   {
-    visualization_msgs::InteractiveMarker& im_msg = msg_vec[ *idx_it ];
+    visualization_msgs::msg::InteractiveMarker& im_msg = msg_vec[ *idx_it ];
     // transform interactive marker
     bool success = getTransform( im_msg.header, im_msg.pose );
     // transform regular markers
     for ( unsigned c = 0; c<im_msg.controls.size(); c++ )
     {
-      visualization_msgs::InteractiveMarkerControl& ctrl_msg = im_msg.controls[c];
+      visualization_msgs::msg::InteractiveMarkerControl& ctrl_msg = im_msg.controls[c];
       for ( unsigned m = 0; m<ctrl_msg.markers.size(); m++ )
       {
-        visualization_msgs::Marker& marker_msg = ctrl_msg.markers[m];
-        if ( !marker_msg.header.frame_id.empty() ) {
+        visualization_msgs::msg::Marker& marker_msg = ctrl_msg.markers[m];
+        if ( !marker_msg.header.frame_id.size() == 0 ) {
           success = success && getTransform( marker_msg.header, marker_msg.pose );
         }
       }
@@ -142,26 +191,26 @@ void MessageContext<MsgT>::getTfTransforms( std::vector<visualization_msgs::Inte
     }
     else
     {
-      DBG_MSG( "Transform %s -> %s at time %f is not ready.", im_msg.header.frame_id.c_str(), target_frame_.c_str(), im_msg.header.stamp.toSec() );
+      //DBG_MSG( "Transform %s -> %s at time %f is not ready.", im_msg.header.frame_id, target_frame_.c_str(), im_msg.header.stamp.toSec() );
       ++idx_it;
     }
   }
 }
 
 template<class MsgT>
-void MessageContext<MsgT>::getTfTransforms( std::vector<visualization_msgs::InteractiveMarkerPose>& msg_vec, std::list<size_t>& indices )
+void MessageContext<MsgT>::getTfTransforms( std::vector<visualization_msgs::msg::InteractiveMarkerPose>& msg_vec, std::list<size_t>& indices )
 {
   std::list<size_t>::iterator idx_it;
   for ( idx_it = indices.begin(); idx_it != indices.end(); )
   {
-    visualization_msgs::InteractiveMarkerPose& msg = msg_vec[ *idx_it ];
+    visualization_msgs::msg::InteractiveMarkerPose& msg = msg_vec[ *idx_it ];
     if ( getTransform( msg.header, msg.pose ) )
     {
       idx_it = indices.erase(idx_it);
     }
     else
     {
-      DBG_MSG( "Transform %s -> %s at time %f is not ready.", msg.header.frame_id.c_str(), target_frame_.c_str(), msg.header.stamp.toSec() );
+      //DBG_MSG( "Transform %s -> %s at time %f is not ready.", msg.header.frame_id, target_frame_.c_str(), msg.header.stamp.toSec() );
       ++idx_it;
     }
   }
@@ -174,7 +223,7 @@ bool MessageContext<MsgT>::isReady()
 }
 
 template<>
-void MessageContext<visualization_msgs::InteractiveMarkerUpdate>::init()
+void MessageContext<visualization_msgs::msg::InteractiveMarkerUpdate>::init()
 {
   // mark all transforms as being missing
   for ( size_t i=0; i<msg->markers.size(); i++ )
@@ -201,7 +250,7 @@ void MessageContext<visualization_msgs::InteractiveMarkerUpdate>::init()
 }
 
 template<>
-void MessageContext<visualization_msgs::InteractiveMarkerInit>::init()
+void MessageContext<visualization_msgs::msg::InteractiveMarkerInit>::init()
 {
   // mark all transforms as being missing
   for ( size_t i=0; i<msg->markers.size(); i++ )
@@ -215,7 +264,7 @@ void MessageContext<visualization_msgs::InteractiveMarkerInit>::init()
 }
 
 template<>
-void MessageContext<visualization_msgs::InteractiveMarkerUpdate>::getTfTransforms( )
+void MessageContext<visualization_msgs::msg::InteractiveMarkerUpdate>::getTfTransforms( )
 {
   getTfTransforms( msg->markers, open_marker_idx_ );
   getTfTransforms( msg->poses, open_pose_idx_ );
@@ -226,7 +275,7 @@ void MessageContext<visualization_msgs::InteractiveMarkerUpdate>::getTfTransform
 }
 
 template<>
-void MessageContext<visualization_msgs::InteractiveMarkerInit>::getTfTransforms( )
+void MessageContext<visualization_msgs::msg::InteractiveMarkerInit>::getTfTransforms( )
 {
   getTfTransforms( msg->markers, open_marker_idx_ );
   if ( isReady() )
@@ -236,8 +285,8 @@ void MessageContext<visualization_msgs::InteractiveMarkerInit>::getTfTransforms(
 }
 
 // explicit template instantiation
-template class MessageContext<visualization_msgs::InteractiveMarkerUpdate>;
-template class MessageContext<visualization_msgs::InteractiveMarkerInit>;
+template class MessageContext<visualization_msgs::msg::InteractiveMarkerUpdate>;
+template class MessageContext<visualization_msgs::msg::InteractiveMarkerInit>;
 
 
 }
