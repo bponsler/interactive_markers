@@ -86,7 +86,7 @@ bool MessageContext<MsgT>::getTransform( std_msgs::msg::Header& header, geometry
       ros2_time::Time timestamp;
       timestamp.fromStamp(header.stamp);
 
-      std::chrono::system_clock::time_point timepoint;
+      std::chrono::system_clock::time_point timepoint(std::chrono::seconds(timestamp.toSec()));
       transform = tf_.lookupTransform( target_frame_, header.frame_id, timepoint);
       //DBG_MSG( "Transform %s -> %s at time %f is ready.", header.frame_id.c_str(), target_frame_.c_str(), header.stamp.toSec() );
 
