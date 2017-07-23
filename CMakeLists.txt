@@ -36,7 +36,7 @@ set(LIBS ${ament_cmake_LIBRARIES}
   ${tf2_LIBRARIES} ${visualization_msgs_LIBRARIES}
   ${ros2_console_LIBRARIES} ${ros2_time_LIBRARIES})
 
-add_library(${PROJECT_NAME} src/interactive_marker_server.cpp src/tools.cpp
+add_library(${PROJECT_NAME} SHARED src/interactive_marker_server.cpp src/tools.cpp
   src/menu_handler.cpp src/interactive_marker_client.cpp src/single_client.cpp
   src/message_context.cpp)
 
