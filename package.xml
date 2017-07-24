@@ -12,7 +12,7 @@
 
   <url>http://ros.org/wiki/interactive_markers</url>
 
-  <buildtool_depend>ament</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <build_depend>ros2_console</build_depend>
